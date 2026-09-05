@@ -201,5 +201,93 @@ def test_qwen_moe_architecture_parsing():
   assert arch.is_hybrid_linear is True
   assert arch.num_full_attention_layers == 10
   assert arch.num_linear_attention_layers == 30
+  assert arch.full_attention_kv_scheme == "gqa"
+
+
+def test_gguf_precedence_over_config():
+  fetcher = ModelMetadataFetcher()
+  # Upstream config says 32 layers and 4096 hidden, but GGUF has 28 layers and 3584 hidden
+  config = {
+    "num_hidden_layers": 32,
+    "hidden_size": 4096,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "max_position_embeddings": 32768,
+  }
+  gguf_meta = {
+    "general.architecture": "qwen2",
+    "qwen2.block_count": 28,
+    "qwen2.embedding_length": 3584,
+    "qwen2.attention.head_count": 28,
+    "qwen2.attention.head_count_kv": 4,
+    "qwen2.context_length": 131072,
+  }
+
+  arch = fetcher._build_architecture_obj(
+    repo_id="test/qwen-gguf",
+    is_gguf=True,
+    base_model="test/upstream-base",
+    gguf_meta=gguf_meta,
+    config=config,
+  )
+
+  # Artifact metadata takes priority
+  assert arch.num_hidden_layers == 28
+  assert arch.hidden_size == 3584
+  assert arch.num_attention_heads == 28
+  assert arch.num_key_value_heads == 4
+  assert arch.max_position_embeddings == 131072
+  assert arch.full_attention_kv_scheme == "gqa"
+
+
+def test_inferred_defaults_warning():
+  fetcher = ModelMetadataFetcher()
+  # Empty config and empty GGUF metadata
+  arch = fetcher._build_architecture_obj(
+    repo_id="test/unknown-model",
+    is_gguf=False,
+    base_model=None,
+    gguf_meta={},
+    config={},
+  )
+
+  assert arch.is_inferred_default is True
+  assert len(arch.inferred_fields) > 0
+  assert any("num_hidden_layers" in f for f in arch.inferred_fields)
+  assert any("⚠️ Architecture fields unavailable" in note for note in arch.special_notes)
+
+
+def test_per_layer_kv_heads_list():
+  fetcher = ModelMetadataFetcher()
+  # GGUF metadata for hybrid linear model with per-layer head_count_kv list (e.g. GLM-5.3-Flash)
+  gguf_meta = {
+    "general.architecture": "glm5next",
+    "general.name": "GLM 5.3 Flash",
+    "glm5next.block_count": 46,
+    "glm5next.embedding_length": 4096,
+    "glm5next.attention.head_count": 64,
+    "glm5next.attention.head_count_kv": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1],
+    "glm5next.attention.kv_lora_rank": 512,
+    "glm5next.context_length": 1048576,
+  }
+
+  arch = fetcher._build_architecture_obj(
+    repo_id="unsloth/GLM-5.3-Flash-GGUF",
+    is_gguf=True,
+    base_model=None,
+    gguf_meta=gguf_meta,
+    config={},
+  )
+
+  assert arch.num_hidden_layers == 46
+  assert arch.num_attention_heads == 64
+  assert arch.num_key_value_heads == 1
+  assert arch.is_hybrid_linear is True
+  assert arch.num_full_attention_layers == 12
+  assert arch.num_linear_attention_layers == 34
+  assert arch.is_mla is True
+  assert arch.is_inferred_default is False
+
+
 
 

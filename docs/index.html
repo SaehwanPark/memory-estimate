@@ -394,8 +394,8 @@
           </p>
           <ul>
             <li><strong>Standard FP16 KV Cache:</strong> ~17.2 GB</li>
-            <li><strong>FP8 (Q8_0) KV Cache:</strong> ~8.6 GB (50% reduction with negligible quality loss)</li>
-            <li><strong>Q4_0 KV Cache:</strong> ~4.3 GB (75% reduction)</li>
+            <li><strong>8-bit (q8_0 / FP8) KV Cache:</strong> ~8.6 - 9.1 GB (recommended memory-efficient default; quality impact is generally small but model/backend dependent)</li>
+            <li><strong>Q4_0 KV Cache:</strong> ~4.8 GB (block scale metadata included; 4.5 bpw)</li>
           </ul>
         </div>
 
@@ -406,6 +406,30 @@
             <li><strong>GQA (Grouped-Query Attention):</strong> Multiple query heads share a single key/value head (e.g. 8:1 ratio in Llama 3.1 70B or Qwen 2.5 32B), reducing KV cache size by 4x to 8x.</li>
             <li><strong>MLA (Multi-Head Latent Attention):</strong> Used in DeepSeek V2/V3 and GLM-5. Key and Value projections are compressed into a low-rank latent vector (<code>kv_lora_rank = 512</code>). Achieves ~5x KV cache compression over standard GQA!</li>
             <li><strong>Hybrid Linear Attention:</strong> Used in models like <code>GLM-5.3-Flash</code> and <code>Qwen3.6 MoE</code>. Only a fraction of layers use full/sparse attention, while the majority use linear recurrent attention with fixed state memory.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>4. Epistemic Decomposition & Precise Block Sizing</h3>
+          <p>
+            Memory estimation is decomposed into four explicit confidence tiers:
+          </p>
+          <ul>
+            <li><strong>Model Weights (M<sub>weights</sub>):</strong> Exact downloadable shard bytes summed via Hugging Face API (or parameter heuristic if unquantized base model).</li>
+            <li><strong>KV Cache (M<sub>KV</sub>):</strong> Architecture-derived calculation accounting for full-attention layers (N<sub>full</sub>), linear attention recurrent state (N<sub>linear</sub> &times; S<sub>state</sub>), and real GGML block quantization scales (<code>q8_0</code>: 8.5 bpw / 1.0625 B, <code>q4_0</code>: 4.5 bpw / 0.5625 B, <code>q5_0</code>: 5.5 bpw / 0.6875 B). Supports asymmetric K and V quantization.</li>
+            <li><strong>Activation Scratchpad (M<sub>scratch</sub>):</strong> Backend heuristic modeling attention workspace, context graph, MoE routing buffers, and prefill chunking (<code>ubatch</code>).</li>
+            <li><strong>System Headroom (M<sub>headroom</sub>):</strong> User policy reserve (default 6.0 GB) for macOS kernel, WindowServer, framebuffers, and IDE tools.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>5. macOS Metal Working-Set Limit vs. Physical RAM</h3>
+          <p>
+            Apple Silicon memory planning evaluates two distinct constraints:
+          </p>
+          <ul>
+            <li><strong>Physical RAM Fit:</strong> Total memory must fit within system RAM (M<sub>total</sub> &le; M<sub>RAM</sub>) to avoid catastrophic SSD swap.</li>
+            <li><strong>Metal Working-Set Limit (~75%):</strong> macOS limits a single process's GPU/Metal allocation to ~75% of physical RAM by default (M<sub>runtime</sub> &le; 0.75 &times; M<sub>RAM</sub>). When runtime memory fits in RAM but exceeds 75%, macOS may fail allocation unless tuned via <code>sudo sysctl iogpu.wired_mem_limit</code>.</li>
           </ul>
         </div>
       </section>
@@ -437,7 +461,7 @@
           </li>
           <li>
             <strong>Configure Agentic Parameters:</strong>
-            Adjust the context window depth slider (default: 64k tokens), KV Cache quantization (FP16, FP8, Q4_0), and system headroom (default: 6.0 GB).
+            Adjust context window depth slider (32k to 128k+ tokens), K and V cache quantization types (e.g. <code>fp16</code>, <code>fp8</code>, <code>q8_0</code>, <code>q4_0</code>, <code>q5_0</code> with asymmetric options), and system headroom reserve (default: 6.0 GB).
           </li>
           <li>
             <strong>Review Memory Allocation & Hardware Sizing:</strong>
@@ -560,8 +584,8 @@ uv run python main.py</code></pre>
           </p>
           <ul>
             <li><strong>표준 FP16 KV 캐시:</strong> 약 17.2 GB (가중치에 필적)</li>
-            <li><strong>FP8(Q8_0) KV 캐시:</strong> 약 8.6 GB (코딩 성능 저하 없이 메모리 50% 절감, 추천 설정)</li>
-            <li><strong>Q4_0 KV 캐시:</strong> 약 4.3 GB (메모리 75% 절감)</li>
+            <li><strong>8비트(q8_0 / FP8) KV 캐시:</strong> 약 8.6~9.1 GB (품질 영향이 대체로 미미한 권장 기본값, 모델/런타임별 상이)</li>
+            <li><strong>Q4_0 KV 캐시:</strong> 약 4.8 GB (블록 스케일 메타데이터 포함 시 4.5 bpw)</li>
           </ul>
         </div>
 
@@ -572,6 +596,30 @@ uv run python main.py</code></pre>
             <li><strong>GQA (그룹 쿼리 주의집중):</strong> 여러 쿼리 헤드가 하나의 Key/Value 헤드를 공유(예: 8:1)하여 캐시 메모리를 4~8배 절감합니다 (Llama 3.1, Qwen 2.5 등).</li>
             <li><strong>MLA (다중 헤드 잠재 주의집중):</strong> DeepSeek V2/V3 및 GLM-5에서 채택한 구조입니다. Key/Value 프로젝션을 512차원의 저차원 잠재 벡터(<code>kv_lora_rank</code>)로 압축하여 저장하므로, 표준 GQA 대비 약 <strong>5배 추가 캐시 압축</strong>을 달성합니다.</li>
             <li><strong>하이브리드 선형 어텐션:</strong> <code>GLM-5.3-Flash</code> 및 <code>Qwen3.6 MoE</code> 등에서 사용하는 차세대 구조로, 전체 레이어 중 일부만 어텐션을 수행하고 대다수 레이어는 고정 크기 상태(State)를 유지하는 선형 어텐션을 결합하여 긴 컨텍스트에서도 캐시 증가를 극적으로 억제합니다.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>4. 신뢰성 계층(Epistemic Decomposition) 및 정밀 블록 모델링</h3>
+          <p>
+            메모리 추정치는 네 가지 명확한 근거 수준으로 분리되어 투명하게 제공됩니다:
+          </p>
+          <ul>
+            <li><strong>모델 가중치 (M<sub>weights</sub>):</strong> Hugging Face API를 통해 다운로드 가능한 실제 분할 샤드 파일 바이트의 정확한 합산 (또는 베이스 모델의 파라미터 기반 휴리스틱).</li>
+            <li><strong>KV 캐시 (M<sub>KV</sub>):</strong> 풀 어텐션 레이어 수(N<sub>full</sub>), 선형 어텐션 고정 순환 상태(N<sub>linear</sub> &times; S<sub>state</sub>), 그리고 GGML 블록 양자화 메타데이터 오버헤드(<code>q8_0</code>: 8.5 bpw / 1.0625 B, <code>q4_0</code>: 4.5 bpw / 0.5625 B, <code>q5_0</code>: 5.5 bpw / 0.6875 B)를 정밀 반영한 아키텍처 기반 계산. K와 V 캐시의 비대칭 포맷 지정 지원.</li>
+            <li><strong>활성화 스크래치패드 (M<sub>scratch</sub>):</strong> 어텐션 작업 영역, 연산 그래프, MoE 라우팅 버퍼 및 프리필 청크(<code>ubatch</code>)를 모델링한 백엔드 휴리스틱.</li>
+            <li><strong>시스템 헤드룸 (M<sub>headroom</sub>):</strong> macOS 커널, WindowServer, 외장 모니터 프레임버퍼, IDE 등을 위한 사용자 정책 기반 예약 공간(기본 6.0 GB).</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>5. macOS Metal 작업 세트 한계와 물리 RAM 제약</h3>
+          <p>
+            Apple Silicon 환경에서는 두 가지 서로 다른 제약 조건을 동시에 검토해야 합니다:
+          </p>
+          <ul>
+            <li><strong>물리 RAM 제약:</strong> 전체 메모리가 시스템 물리 RAM 이하(M<sub>total</sub> &le; M<sub>RAM</sub>)여야 NVMe SSD 스와핑 병목을 방지할 수 있습니다.</li>
+            <li><strong>Metal 프로세스 할당 한계 (~75%):</strong> macOS는 단일 프로세스가 할당할 수 있는 GPU/Metal 메모리를 기본적으로 물리 RAM의 약 75%(M<sub>runtime</sub> &le; 0.75 &times; M<sub>RAM</sub>)로 제한합니다. 런타임 메모리가 물리 RAM에는 들어가지만 75%를 초과할 경우, <code>sudo sysctl iogpu.wired_mem_limit</code> 튜닝이 필요합니다.</li>
           </ul>
         </div>
       </section>
@@ -603,7 +651,7 @@ uv run python main.py</code></pre>
           </li>
           <li>
             <strong>에이전틱 파라미터 조정:</strong>
-            컨텍스트 윈도우 깊이(기본 64k 권장), KV 캐시 정밀도(FP8 권장), 시스템 여유 공간(기본 6.0GB)을 설정합니다.
+            컨텍스트 윈도우 깊이(32k~128k+ 토큰), K 및 V 캐시 양자화 정밀도(<code>fp16</code>, <code>fp8</code>, <code>q8_0</code>, <code>q4_0</code>, <code>q5_0</code> 및 비대칭 조합 지원), 시스템 여유 공간(기본 6.0 GB)을 설정합니다.
           </li>
           <li>
             <strong>호환성 매트릭스 확인:</strong>

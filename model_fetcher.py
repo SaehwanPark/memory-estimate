@@ -52,17 +52,24 @@ class ModelArchitecture:
   kv_lora_rank: Optional[int] = None
   qk_rope_head_dim: Optional[int] = None
   
-  # Hybrid / Linear Attention (e.g. GLM-5.3-Flash)
+  # Hybrid / Linear Attention (e.g. GLM-5.3-Flash, Qwen3.6 MoE)
   is_hybrid_linear: bool = False
   num_full_attention_layers: Optional[int] = None
   num_linear_attention_layers: Optional[int] = None
+  full_attention_kv_scheme: str = "gqa"  # "gqa", "mla", "mha"
+  linear_state_bytes_per_layer: int = 131072  # ~128 KB constant recurrent state
   
   # Sliding window attention
   sliding_window: Optional[int] = None
   
+  # Epistemic metadata: whether architecture relied on fallback defaults
+  is_inferred_default: bool = False
+  inferred_fields: List[str] = field(default_factory=list)
+  
   # Raw config or extra notes
   base_model: Optional[str] = None
   special_notes: List[str] = field(default_factory=list)
+
 
 
 def parse_hf_url(url_or_repo_id: str) -> str:
@@ -134,12 +141,17 @@ def extract_quant_name_from_filename(filename: str) -> str:
   return clean
 
 
-def parse_gguf_header_range(url: str, max_bytes: int = 8 * 1024 * 1024) -> Dict[str, Any]:
+def parse_gguf_header_range(
+  url: str, max_bytes: int = 8 * 1024 * 1024, hf_token: Optional[str] = None
+) -> Dict[str, Any]:
   """
   Reads GGUF metadata from the beginning of a remote GGUF file using an HTTP Range request.
   This allows extracting exact architecture, context length, heads, and layers without downloading the model.
+  Supports authenticated range requests for gated/private repositories.
   """
   headers = {"Range": f"bytes=0-{max_bytes - 1}", "User-Agent": "MemoryEstimate/1.0"}
+  if hf_token:
+    headers["Authorization"] = f"Bearer {hf_token}"
   req = urllib.request.Request(url, headers=headers)
   try:
     with urllib.request.urlopen(req, timeout=10) as resp:
@@ -353,6 +365,7 @@ def detect_prequantized_metadata(
 
 class ModelMetadataFetcher:
   def __init__(self, hf_token: Optional[str] = None):
+    self.hf_token = hf_token
     self.api = HfApi(token=hf_token)
 
   def fetch_repo_info(self, repo_id: str) -> Any:
@@ -364,11 +377,14 @@ class ModelMetadataFetcher:
 
   def fetch_config_json(self, repo_id: str) -> Dict[str, Any]:
     """
-    Fetches config.json from repository if present.
+    Fetches config.json from repository if present with optional authentication.
     """
     url = f"https://huggingface.co/{repo_id}/raw/main/config.json"
     try:
-      req = urllib.request.Request(url, headers={"User-Agent": "MemoryEstimate/1.0"})
+      headers = {"User-Agent": "MemoryEstimate/1.0"}
+      if self.hf_token:
+        headers["Authorization"] = f"Bearer {self.hf_token}"
+      req = urllib.request.Request(url, headers=headers)
       with urllib.request.urlopen(req, timeout=5) as resp:
         return json.loads(resp.read().decode("utf-8"))
     except Exception:
@@ -517,7 +533,7 @@ class ModelMetadataFetcher:
       
       if target_file:
         url = f"https://huggingface.co/{repo_id}/resolve/main/{target_file}"
-        gguf_metadata = parse_gguf_header_range(url)
+        gguf_metadata = parse_gguf_header_range(url, hf_token=self.hf_token)
 
     config_json: Dict[str, Any] = {}
     config_sources = [base_model, repo_id] if base_model else [repo_id]
@@ -526,7 +542,10 @@ class ModelMetadataFetcher:
         continue
       url = f"https://huggingface.co/{src}/raw/main/config.json"
       try:
-        req = urllib.request.Request(url, headers={"User-Agent": "MemoryEstimate/1.0"})
+        headers = {"User-Agent": "MemoryEstimate/1.0"}
+        if self.hf_token:
+          headers["Authorization"] = f"Bearer {self.hf_token}"
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as resp:
           config_json = json.loads(resp.read().decode("utf-8"))
           if config_json:
@@ -552,128 +571,365 @@ class ModelMetadataFetcher:
   ) -> ModelArchitecture:
     """
     Consolidates config.json and GGUF header into a clean ModelArchitecture dataclass.
+    Prioritizes GGUF artifact metadata when analyzing a GGUF artifact over upstream base model configs.
     """
     cfg = config.get("text_config", config)
 
+    # Architecture type resolution
     arch_type = "transformer"
-    if "general.architecture" in gguf_meta:
+    if is_gguf and "general.architecture" in gguf_meta:
       arch_type = str(gguf_meta["general.architecture"]).lower()
     elif "architectures" in cfg and cfg["architectures"]:
       arch_type = cfg["architectures"][0].lower()
     elif "model_type" in cfg:
       arch_type = str(cfg["model_type"]).lower()
+    elif "general.architecture" in gguf_meta:
+      arch_type = str(gguf_meta["general.architecture"]).lower()
 
     model_name = repo_id.split("/")[-1]
-    if "general.name" in gguf_meta:
+    if is_gguf and "general.name" in gguf_meta:
       model_name = str(gguf_meta["general.name"])
 
     arch_prefix = f"{arch_type}." if arch_type else ""
 
-    num_layers = (
-      cfg.get("num_hidden_layers")
-      or cfg.get("n_layer")
-      or cfg.get("num_layers")
-      or gguf_meta.get(f"{arch_prefix}block_count")
-      or gguf_meta.get("llama.block_count")
-      or 32
-    )
+    # Precedence: For GGUF repositories, inspect GGUF artifact metadata first.
+    # For non-GGUF repositories, inspect config.json first.
+    if is_gguf and gguf_meta:
+      num_layers = (
+        gguf_meta.get(f"{arch_prefix}block_count")
+        or gguf_meta.get("llama.block_count")
+        or cfg.get("num_hidden_layers")
+        or cfg.get("n_layer")
+        or cfg.get("num_layers")
+      )
+      hidden_size = (
+        gguf_meta.get(f"{arch_prefix}embedding_length")
+        or gguf_meta.get("llama.embedding_length")
+        or cfg.get("hidden_size")
+        or cfg.get("n_embd")
+      )
+      num_heads = (
+        gguf_meta.get(f"{arch_prefix}attention.head_count")
+        or gguf_meta.get("llama.attention.head_count")
+        or cfg.get("num_attention_heads")
+        or cfg.get("n_head")
+      )
+      num_kv_heads = (
+        gguf_meta.get(f"{arch_prefix}attention.head_count_kv")
+        or gguf_meta.get("llama.attention.head_count_kv")
+        or cfg.get("num_key_value_heads")
+        or cfg.get("n_head_kv")
+        or num_heads
+      )
+      explicit_head_dim = (
+        gguf_meta.get(f"{arch_prefix}attention.key_length")
+        or gguf_meta.get("llama.attention.key_length")
+        or cfg.get("head_dim")
+      )
+      max_context = (
+        gguf_meta.get(f"{arch_prefix}context_length")
+        or gguf_meta.get("llama.context_length")
+        or cfg.get("max_position_embeddings")
+        or cfg.get("max_sequence_length")
+        or cfg.get("seq_length")
+      )
+      kv_lora_rank = (
+        gguf_meta.get(f"{arch_prefix}attention.kv_lora_rank")
+        or gguf_meta.get("deepseek2.attention.kv_lora_rank")
+        or cfg.get("kv_lora_rank")
+      )
+      qk_rope_head_dim = (
+        gguf_meta.get(f"{arch_prefix}rope.dimension_count")
+        or cfg.get("qk_rope_head_dim")
+      )
+      sliding_window = (
+        gguf_meta.get(f"{arch_prefix}attention.sliding_window_size")
+        or cfg.get("sliding_window")
+      )
+      num_routed_experts = (
+        gguf_meta.get(f"{arch_prefix}expert_count")
+        or cfg.get("n_routed_experts")
+        or cfg.get("num_local_experts")
+        or cfg.get("num_experts")
+        or cfg.get("n_experts")
+        or cfg.get("expert_count")
+      )
+      num_experts_per_tok = (
+        gguf_meta.get(f"{arch_prefix}expert_used_count")
+        or cfg.get("num_experts_per_tok")
+        or cfg.get("num_experts_per_token")
+        or cfg.get("n_routed_experts_per_tok")
+      )
+      num_shared_experts = (
+        gguf_meta.get(f"{arch_prefix}expert_shared_count")
+        or cfg.get("n_shared_experts")
+      )
+      vocab_size = (
+        gguf_meta.get(f"{arch_prefix}vocab_size")
+        or cfg.get("vocab_size")
+      )
+    else:
+      num_layers = (
+        cfg.get("num_hidden_layers")
+        or cfg.get("n_layer")
+        or cfg.get("num_layers")
+        or gguf_meta.get(f"{arch_prefix}block_count")
+        or gguf_meta.get("llama.block_count")
+      )
+      hidden_size = (
+        cfg.get("hidden_size")
+        or cfg.get("n_embd")
+        or gguf_meta.get(f"{arch_prefix}embedding_length")
+        or gguf_meta.get("llama.embedding_length")
+      )
+      num_heads = (
+        cfg.get("num_attention_heads")
+        or cfg.get("n_head")
+        or gguf_meta.get(f"{arch_prefix}attention.head_count")
+        or gguf_meta.get("llama.attention.head_count")
+      )
+      num_kv_heads = (
+        cfg.get("num_key_value_heads")
+        or cfg.get("n_head_kv")
+        or gguf_meta.get(f"{arch_prefix}attention.head_count_kv")
+        or gguf_meta.get("llama.attention.head_count_kv")
+        or num_heads
+      )
+      explicit_head_dim = (
+        cfg.get("head_dim")
+        or gguf_meta.get(f"{arch_prefix}attention.key_length")
+        or gguf_meta.get("llama.attention.key_length")
+      )
+      max_context = (
+        cfg.get("max_position_embeddings")
+        or cfg.get("max_sequence_length")
+        or cfg.get("seq_length")
+        or gguf_meta.get(f"{arch_prefix}context_length")
+        or gguf_meta.get("llama.context_length")
+      )
+      kv_lora_rank = (
+        cfg.get("kv_lora_rank")
+        or gguf_meta.get(f"{arch_prefix}attention.kv_lora_rank")
+        or gguf_meta.get("deepseek2.attention.kv_lora_rank")
+      )
+      qk_rope_head_dim = (
+        cfg.get("qk_rope_head_dim")
+        or gguf_meta.get(f"{arch_prefix}rope.dimension_count")
+      )
+      sliding_window = (
+        cfg.get("sliding_window")
+        or gguf_meta.get(f"{arch_prefix}attention.sliding_window_size")
+      )
+      num_routed_experts = (
+        cfg.get("n_routed_experts")
+        or cfg.get("num_local_experts")
+        or cfg.get("num_experts")
+        or cfg.get("n_experts")
+        or cfg.get("expert_count")
+        or gguf_meta.get(f"{arch_prefix}expert_count")
+      )
+      num_experts_per_tok = (
+        cfg.get("num_experts_per_tok")
+        or cfg.get("num_experts_per_token")
+        or cfg.get("n_routed_experts_per_tok")
+        or gguf_meta.get(f"{arch_prefix}expert_used_count")
+      )
+      num_shared_experts = (
+        cfg.get("n_shared_experts")
+        or gguf_meta.get(f"{arch_prefix}expert_shared_count")
+      )
+      vocab_size = (
+        cfg.get("vocab_size")
+        or gguf_meta.get(f"{arch_prefix}vocab_size")
+      )
 
-    hidden_size = (
-      cfg.get("hidden_size")
-      or cfg.get("n_embd")
-      or gguf_meta.get(f"{arch_prefix}embedding_length")
-      or gguf_meta.get("llama.embedding_length")
-      or 4096
-    )
+    # Normalize list-typed metadata fields (e.g. per-layer KV head arrays in GGUF or configs)
+    is_hybrid_linear = False
+    num_full_attn: Optional[int] = None
+    num_linear_attn: Optional[int] = None
 
-    num_heads = (
-      cfg.get("num_attention_heads")
-      or cfg.get("n_head")
-      or gguf_meta.get(f"{arch_prefix}attention.head_count")
-      or gguf_meta.get("llama.attention.head_count")
-      or 32
-    )
+    if isinstance(num_kv_heads, list):
+      non_zero_kv = [int(h) for h in num_kv_heads if int(h) > 0]
+      zero_kv_count = sum(1 for h in num_kv_heads if int(h) == 0)
+      if zero_kv_count > 0:
+        is_hybrid_linear = True
+        num_full_attn = len(non_zero_kv)
+        num_linear_attn = zero_kv_count
+      num_kv_heads = max(non_zero_kv) if non_zero_kv else 1
+    elif num_kv_heads is not None:
+      try:
+        num_kv_heads = int(num_kv_heads)
+      except (ValueError, TypeError):
+        num_kv_heads = None
 
-    num_kv_heads = (
-      cfg.get("num_key_value_heads")
-      or cfg.get("n_head_kv")
-      or gguf_meta.get(f"{arch_prefix}attention.head_count_kv")
-      or gguf_meta.get("llama.attention.head_count_kv")
-      or num_heads
-    )
+    if isinstance(num_heads, list):
+      num_heads = max(int(h) for h in num_heads) if num_heads else 32
+    elif num_heads is not None:
+      try:
+        num_heads = int(num_heads)
+      except (ValueError, TypeError):
+        num_heads = None
 
-    explicit_head_dim = (
-      cfg.get("head_dim")
-      or gguf_meta.get(f"{arch_prefix}attention.key_length")
-      or gguf_meta.get("llama.attention.key_length")
-    )
-    head_dim = explicit_head_dim if explicit_head_dim else (hidden_size // num_heads if num_heads else 128)
+    if isinstance(num_layers, list):
+      num_layers = len(num_layers)
+    elif num_layers is not None:
+      try:
+        num_layers = int(num_layers)
+      except (ValueError, TypeError):
+        num_layers = None
 
-    max_context = (
-      cfg.get("max_position_embeddings")
-      or cfg.get("max_sequence_length")
-      or cfg.get("seq_length")
-      or gguf_meta.get(f"{arch_prefix}context_length")
-      or gguf_meta.get("llama.context_length")
-      or 32768
-    )
+    if isinstance(hidden_size, list):
+      hidden_size = int(hidden_size[0]) if hidden_size else 4096
+    elif hidden_size is not None:
+      try:
+        hidden_size = int(hidden_size)
+      except (ValueError, TypeError):
+        hidden_size = None
 
-    vocab_size = cfg.get("vocab_size") or gguf_meta.get(f"{arch_prefix}vocab_size")
+    if isinstance(explicit_head_dim, list):
+      explicit_head_dim = max(int(d) for d in explicit_head_dim) if explicit_head_dim else None
+    elif explicit_head_dim is not None:
+      try:
+        explicit_head_dim = int(explicit_head_dim)
+      except (ValueError, TypeError):
+        explicit_head_dim = None
 
-    num_routed_experts = (
-      cfg.get("n_routed_experts")
-      or cfg.get("num_local_experts")
-      or cfg.get("num_experts")
-      or cfg.get("n_experts")
-      or cfg.get("expert_count")
-      or gguf_meta.get(f"{arch_prefix}expert_count")
-    )
-    num_experts_per_tok = (
-      cfg.get("num_experts_per_tok")
-      or cfg.get("num_experts_per_token")
-      or cfg.get("n_routed_experts_per_tok")
-      or cfg.get("expert_used_count")
-      or gguf_meta.get(f"{arch_prefix}expert_used_count")
-    )
-    num_shared_experts = cfg.get("n_shared_experts") or gguf_meta.get(f"{arch_prefix}expert_shared_count")
+    if isinstance(max_context, list):
+      max_context = max(int(c) for c in max_context) if max_context else 32768
+    elif max_context is not None:
+      try:
+        max_context = int(max_context)
+      except (ValueError, TypeError):
+        max_context = None
+
+    if isinstance(sliding_window, list):
+      valid_windows = [int(w) for w in sliding_window if w is not None and int(w) > 0]
+      sliding_window = min(valid_windows) if valid_windows else None
+    elif sliding_window is not None:
+      try:
+        sliding_window = int(sliding_window)
+      except (ValueError, TypeError):
+        sliding_window = None
+
+    if isinstance(kv_lora_rank, list):
+      kv_lora_rank = max(int(r) for r in kv_lora_rank) if kv_lora_rank else None
+    elif kv_lora_rank is not None:
+      try:
+        kv_lora_rank = int(kv_lora_rank)
+      except (ValueError, TypeError):
+        kv_lora_rank = None
+
+    if isinstance(qk_rope_head_dim, list):
+      qk_rope_head_dim = max(int(d) for d in qk_rope_head_dim) if qk_rope_head_dim else 0
+    elif qk_rope_head_dim is not None:
+      try:
+        qk_rope_head_dim = int(qk_rope_head_dim)
+      except (ValueError, TypeError):
+        qk_rope_head_dim = 0
+
+    if isinstance(num_routed_experts, list):
+      num_routed_experts = max(int(e) for e in num_routed_experts) if num_routed_experts else None
+    elif num_routed_experts is not None:
+      try:
+        num_routed_experts = int(num_routed_experts)
+      except (ValueError, TypeError):
+        num_routed_experts = None
+
+    if isinstance(num_experts_per_tok, list):
+      num_experts_per_tok = max(int(e) for e in num_experts_per_tok) if num_experts_per_tok else None
+    elif num_experts_per_tok is not None:
+      try:
+        num_experts_per_tok = int(num_experts_per_tok)
+      except (ValueError, TypeError):
+        num_experts_per_tok = None
+
+    if isinstance(num_shared_experts, list):
+      num_shared_experts = max(int(e) for e in num_shared_experts) if num_shared_experts else None
+    elif num_shared_experts is not None:
+      try:
+        num_shared_experts = int(num_shared_experts)
+      except (ValueError, TypeError):
+        num_shared_experts = None
+
+    if isinstance(vocab_size, list):
+      vocab_size = int(vocab_size[0]) if vocab_size else None
+    elif vocab_size is not None:
+      try:
+        vocab_size = int(vocab_size)
+      except (ValueError, TypeError):
+        vocab_size = None
+
+    # Epistemic precision: track whether essential fields were missing and required fallback
+    inferred_fields: List[str] = []
+    if num_layers is None:
+      num_layers = 32
+      inferred_fields.append("num_hidden_layers (default: 32)")
+    if hidden_size is None:
+      hidden_size = 4096
+      inferred_fields.append("hidden_size (default: 4096)")
+    if num_heads is None:
+      num_heads = 32
+      inferred_fields.append("num_attention_heads (default: 32)")
+    if num_kv_heads is None:
+      num_kv_heads = num_heads
+      inferred_fields.append("num_key_value_heads (default: heads)")
+    if explicit_head_dim is None:
+      head_dim = int(hidden_size) // int(num_heads) if num_heads else 128
+    else:
+      head_dim = explicit_head_dim
+    if max_context is None:
+      max_context = 32768
+      inferred_fields.append("max_position_embeddings (default: 32768)")
+
+    is_inferred_default = len(inferred_fields) > 0
 
     is_moe = bool(num_routed_experts and num_routed_experts > 1)
-
-    kv_lora_rank = (
-      cfg.get("kv_lora_rank")
-      or gguf_meta.get(f"{arch_prefix}attention.kv_lora_rank")
-      or gguf_meta.get("deepseek2.attention.kv_lora_rank")
-    )
-    qk_rope_head_dim = (
-      cfg.get("qk_rope_head_dim")
-      or gguf_meta.get(f"{arch_prefix}rope.dimension_count")
-    )
     is_mla = bool(kv_lora_rank is not None and kv_lora_rank > 0)
 
+    # Compositional attention scheme for full attention layers
+    if is_mla:
+      full_attention_kv_scheme = "mla"
+    elif num_kv_heads < num_heads:
+      full_attention_kv_scheme = "gqa"
+    else:
+      full_attention_kv_scheme = "mha"
+
+    # Hybrid Linear Attention analysis
     layer_types = cfg.get("layer_types", [])
     full_attn_interval = cfg.get("full_attention_interval")
-    is_hybrid_linear = False
-    num_full_attn = num_layers
-    num_linear_attn = 0
 
-    if layer_types:
-      num_linear_attn = sum(1 for lt in layer_types if "linear" in lt)
-      num_full_attn = sum(1 for lt in layer_types if "linear" not in lt and ("attention" in lt or "sparse" in lt))
-      if num_linear_attn > 0:
+    if not is_hybrid_linear:
+      num_full_attn = num_layers
+      num_linear_attn = 0
+
+      if layer_types:
+        num_linear_attn = sum(1 for lt in layer_types if "linear" in lt)
+        num_full_attn = sum(1 for lt in layer_types if "linear" not in lt and ("attention" in lt or "sparse" in lt))
+        if num_linear_attn > 0:
+          is_hybrid_linear = True
+      elif full_attn_interval and full_attn_interval > 1:
+        # e.g. Qwen3.5/3.6 MoE full_attention_interval = 4
         is_hybrid_linear = True
-    elif full_attn_interval and full_attn_interval > 1:
-      # e.g. Qwen3.5/3.6 MoE full_attention_interval = 4
-      is_hybrid_linear = True
-      num_full_attn = max(1, num_layers // full_attn_interval)
-      num_linear_attn = num_layers - num_full_attn
-    elif "glm5next" in arch_type.lower():
-      is_hybrid_linear = True
-      num_full_attn = 11
-      num_linear_attn = num_layers - num_full_attn
-
-    sliding_window = cfg.get("sliding_window") or gguf_meta.get(f"{arch_prefix}attention.sliding_window_size")
+        num_full_attn = max(1, num_layers // full_attn_interval)
+        num_linear_attn = num_layers - num_full_attn
+      elif "glm5next" in arch_type.lower():
+        is_hybrid_linear = True
+        num_full_attn = 11
+        num_linear_attn = num_layers - num_full_attn
+    else:
+      if num_full_attn is None:
+        num_full_attn = num_layers
+      if num_linear_attn is None:
+        num_linear_attn = max(0, num_layers - num_full_attn)
 
     notes = []
+    if is_inferred_default:
+      notes.append(
+        "⚠️ Architecture fields unavailable; using inferred defaults for: "
+        + ", ".join(inferred_fields)
+        + ". Sizing estimates may be inaccurate."
+      )
+
     cfg_quant = cfg.get("quantization") or cfg.get("quantization_config")
     if isinstance(cfg_quant, dict):
       q_bits = cfg_quant.get("bits") or cfg_quant.get("bits_per_weight")
@@ -726,7 +982,10 @@ class ModelMetadataFetcher:
       is_hybrid_linear=is_hybrid_linear,
       num_full_attention_layers=num_full_attn,
       num_linear_attention_layers=num_linear_attn,
+      full_attention_kv_scheme=full_attention_kv_scheme,
       sliding_window=int(sliding_window) if sliding_window else None,
+      is_inferred_default=is_inferred_default,
+      inferred_fields=inferred_fields,
       base_model=base_model,
       special_notes=notes,
     )
