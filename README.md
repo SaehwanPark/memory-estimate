@@ -1,8 +1,8 @@
 # LLM Unified RAM Estimator for Agentic Coding 🧠
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://memory-estimate.streamlit.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](pyproject.toml)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.63+-FF4B4B.svg)](https://streamlit.io)
 [![Documentation](https://img.shields.io/badge/Docs-GitHub%20Pages-38bdf8.svg)](https://saehwanpark.github.io/memory-estimate/)
 [![Tests](https://img.shields.io/badge/Tests-pytest-green.svg)](tests/)
 
@@ -10,6 +10,7 @@ An interactive Streamlit application to calculate the exact Unified RAM required
 
 Instead of relying on simple total parameter heuristics, this tool fetches real repository metadata, inspects remote GGUF binary headers via range requests, groups sharded files, and analyzes exact architecture configurations directly from **Hugging Face**.
 
+🚀 **[Launch Live Web Application (Streamlit Cloud)](https://memory-estimate.streamlit.app/)**  
 📖 **[Read Full Documentation & Background (English & 한국어)](https://saehwanpark.github.io/memory-estimate/)**
 
 ---
@@ -48,7 +49,17 @@ $$\text{Unified RAM Total} = M_{\text{weights}} + M_{\text{KV}} + M_{\text{scrat
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites
+### 🌐 Option A: Live Web App (No Installation Required)
+
+Access the live calculator instantly in your browser:
+
+👉 **[https://memory-estimate.streamlit.app/](https://memory-estimate.streamlit.app/)**
+
+---
+
+### 💻 Option B: Run Locally
+
+#### 1. Prerequisites
 Requires Python $\ge$ 3.13 and [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
@@ -60,7 +71,7 @@ cd memory-estimate
 uv sync
 ```
 
-### 2. Launch Streamlit Application
+#### 2. Launch Streamlit Application
 
 ```bash
 uv run streamlit run app.py

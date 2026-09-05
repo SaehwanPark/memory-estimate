@@ -229,11 +229,36 @@
       font-weight: 700;
       padding: 12px 24px;
       border-radius: 8px;
-      transition: background 0.2s;
+      transition: all 0.2s ease;
     }
 
     .cta-button:hover {
       background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .cta-button.secondary {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .cta-button.secondary:hover {
+      background: #334155;
+      color: #f8fafc;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .nav-app-btn {
+      padding: 7px 16px;
+      font-size: 0.88rem;
+      border-radius: 20px;
     }
 
     .lang-section {
@@ -252,9 +277,14 @@
         <h1>LLM Unified RAM Estimator</h1>
         <p>Architectural memory modeling for deep-context agentic coding on Apple Silicon & Unified Memory architectures.</p>
       </div>
-      <div class="lang-switch">
-        <button class="lang-btn active" onclick="switchLang('en')">English</button>
-        <button class="lang-btn" onclick="switchLang('ko')">한국어</button>
+      <div class="header-actions">
+        <a class="cta-button nav-app-btn" href="https://memory-estimate.streamlit.app/" target="_blank" rel="noopener noreferrer">
+          🚀 Launch App
+        </a>
+        <div class="lang-switch">
+          <button class="lang-btn active" onclick="switchLang('en')">English</button>
+          <button class="lang-btn" onclick="switchLang('ko')">한국어</button>
+        </div>
       </div>
     </header>
 
@@ -268,8 +298,11 @@
         <p>
           At 64k or 128k context depth, <strong>KV Cache memory frequently exceeds the size of the model weights themselves</strong>. This tool fetches real Hugging Face metadata, inspects remote GGUF binary headers via range requests, groups sharded files, and computes realistic Unified RAM requirements.
         </p>
-        <div style="margin-top: 20px;">
-          <a class="cta-button" href="https://github.com/SaehwanPark/memory-estimate" target="_blank">
+        <div style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+          <a class="cta-button" href="https://memory-estimate.streamlit.app/" target="_blank" rel="noopener noreferrer">
+            🚀 Open Live Streamlit App →
+          </a>
+          <a class="cta-button secondary" href="https://github.com/SaehwanPark/memory-estimate" target="_blank" rel="noopener noreferrer">
             View on GitHub →
           </a>
         </div>
@@ -379,6 +412,20 @@
 
       <section>
         <h2>🚀 How to Use the Application</h2>
+
+        <div class="card" style="margin-bottom: 24px; border-left: 4px solid var(--accent); background: rgba(56, 189, 248, 0.08);">
+          <h3 style="margin-top: 0; display: flex; align-items: center; gap: 8px;">
+            🌐 Live Web Application (Streamlit Cloud)
+          </h3>
+          <p style="margin-bottom: 14px;">
+            You can access the fully interactive calculator online without installing any local Python environment:
+          </p>
+          <a class="cta-button" href="https://memory-estimate.streamlit.app/" target="_blank" rel="noopener noreferrer">
+            🚀 Open memory-estimate.streamlit.app →
+          </a>
+        </div>
+
+        <h3 style="margin-bottom: 12px;">Step-by-Step Workflow</h3>
         <ol>
           <li>
             <strong>Select or Paste Model URL:</strong>
@@ -398,6 +445,7 @@
           </li>
         </ol>
 
+        <h3 style="margin-top: 24px; margin-bottom: 12px;">Running Locally via CLI</h3>
         <pre><code># Quick CLI Launch
 uv run streamlit run app.py
 
@@ -416,8 +464,11 @@ uv run python main.py</code></pre>
         <p>
           이러한 깊은 컨텍스트에서는 <strong>KV 캐시(Key-Value Cache) 메모리가 모델 자체의 가중치 메모리보다 커지는 현상</strong>이 빈번히 발생합니다. 본 애플리케이션은 단순한 총 파라미터 수 기반의 어림짐작이 아닌, Hugging Face API와 GGUF 바이너리 헤더 범위 요청(Range Request)을 통해 실제 모델 구조와 샤딩된 파일 크기를 정밀 분석하여 통합 메모리(Unified RAM) 요구량을 실시간 계산합니다.
         </p>
-        <div style="margin-top: 20px;">
-          <a class="cta-button" href="https://github.com/SaehwanPark/memory-estimate" target="_blank">
+        <div style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+          <a class="cta-button" href="https://memory-estimate.streamlit.app/" target="_blank" rel="noopener noreferrer">
+            🚀 실시간 Streamlit 앱 열기 →
+          </a>
+          <a class="cta-button secondary" href="https://github.com/SaehwanPark/memory-estimate" target="_blank" rel="noopener noreferrer">
             GitHub 리포지토리 바로가기 →
           </a>
         </div>
@@ -527,6 +578,20 @@ uv run python main.py</code></pre>
 
       <section>
         <h2>🚀 애플리케이션 사용 방법</h2>
+
+        <div class="card" style="margin-bottom: 24px; border-left: 4px solid var(--accent); background: rgba(56, 189, 248, 0.08);">
+          <h3 style="margin-top: 0; display: flex; align-items: center; gap: 8px;">
+            🌐 실시간 배포 웹 애플리케이션 (Streamlit Cloud)
+          </h3>
+          <p style="margin-bottom: 14px;">
+            로컬 파이썬 환경이나 패키지 설치 없이 웹 브라우저에서 즉시 인터랙티브 계산기를 사용할 수 있습니다:
+          </p>
+          <a class="cta-button" href="https://memory-estimate.streamlit.app/" target="_blank" rel="noopener noreferrer">
+            🚀 memory-estimate.streamlit.app 바로가기 →
+          </a>
+        </div>
+
+        <h3 style="margin-bottom: 12px;">단계별 사용 절차</h3>
         <ol>
           <li>
             <strong>Hugging Face 모델 URL 입력:</strong>
@@ -546,6 +611,7 @@ uv run python main.py</code></pre>
           </li>
         </ol>
 
+        <h3 style="margin-top: 24px; margin-bottom: 12px;">로컬 터미널 실행 방법</h3>
         <pre><code># 터미널 실행 명령어
 uv run streamlit run app.py
 
@@ -553,6 +619,17 @@ uv run streamlit run app.py
 uv run python main.py</code></pre>
       </section>
     </div>
+
+    <footer style="margin-top: 60px; padding-top: 30px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--text-muted); font-size: 0.9rem;">
+      <div>
+        <strong>LLM Unified RAM Estimator</strong> &bull; Architectural memory modeling for agentic coding.
+      </div>
+      <div style="display: flex; gap: 18px;">
+        <a href="https://memory-estimate.streamlit.app/" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none; font-weight: 600;">🚀 Live App</a>
+        <a href="https://github.com/SaehwanPark/memory-estimate" target="_blank" rel="noopener noreferrer" style="color: var(--text-muted); text-decoration: none;">GitHub</a>
+        <a href="https://github.com/SaehwanPark/memory-estimate/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" style="color: var(--text-muted); text-decoration: none;">MIT License</a>
+      </div>
+    </footer>
   </div>
 
   <script>

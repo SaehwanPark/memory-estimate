@@ -296,6 +296,8 @@ def render_header():
     """
     Accurately estimate unified RAM requirements (e.g. Apple Silicon Mac) for deep-context agentic coding workflows.
     Fetches real metadata, sharded GGUF file sizes, and architecture specifications directly from Hugging Face.
+    
+    [📖 Documentation & Theory](https://saehwanpark.github.io/memory-estimate/) &bull; [💻 GitHub Repository](https://github.com/SaehwanPark/memory-estimate)
     """
   )
 
@@ -306,6 +308,9 @@ def main():
   # Sidebar: Quick Presets & Token configuration
   with st.sidebar:
     st.header("⚙️ Model Selection")
+    st.markdown(
+      "[📖 Docs](https://saehwanpark.github.io/memory-estimate/) &bull; [⭐ GitHub](https://github.com/SaehwanPark/memory-estimate)"
+    )
     
     preset_choice = st.selectbox(
       "Quick Model Presets:",
