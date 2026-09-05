@@ -1,7 +1,7 @@
 """
-Streamlit App: Unified RAM Estimator for LLMs in Agentic Coding.
-Calculates memory required on Unified Memory (e.g. Apple Silicon Mac)
-based on exact HuggingFace metadata, GGUF quantizations, and model architectures.
+Streamlit App: Unified RAM Estimator for Deep-Context Local Inference & Agentic Coding.
+Architecture-aware estimate of peak unified-memory requirements (e.g. Apple Silicon Mac)
+based on exact repository metadata, attention topology, and runtime buffers.
 Indent: 2 spaces.
 """
 
@@ -12,6 +12,7 @@ import streamlit as st
 
 from calculator import (
   KVCachePrecision,
+  KVCacheType,
   calculate_unified_ram,
   calculate_kv_cache_bytes,
   evaluate_all_mac_tiers,
@@ -26,7 +27,7 @@ from model_fetcher import (
 
 # Page configuration
 st.set_page_config(
-  page_title="LLM Unified RAM Estimator | Agentic Coding",
+  page_title="LLM Unified RAM Estimator | Deep-Context Local Inference",
   page_icon="🧠",
   layout="wide",
   initial_sidebar_state="expanded",
@@ -291,11 +292,11 @@ def cached_fetch_architecture(
 
 
 def render_header():
-  st.title("🧠 LLM Unified RAM Estimator for Agentic Coding")
+  st.title("🧠 LLM Unified RAM Estimator | Deep-Context Local Inference")
   st.markdown(
     """
-    Accurately estimate unified RAM requirements (e.g. Apple Silicon Mac) for deep-context agentic coding workflows.
-    Fetches real metadata, sharded GGUF file sizes, and architecture specifications directly from Hugging Face.
+    Architecture-aware estimate of peak unified-memory requirements (e.g. Apple Silicon Mac) for deep-context local inference and agentic coding workflows.
+    Fetches real repository metadata, sharded GGUF/safetensors byte sums, and attention topologies directly from Hugging Face.
     
     [📖 Documentation & Theory](https://saehwanpark.github.io/memory-estimate/) &bull; [💻 GitHub Repository](https://github.com/SaehwanPark/memory-estimate)
     """
@@ -444,7 +445,15 @@ def main():
         num_key_value_heads=8,
         head_dim=128,
         max_position_embeddings=131072,
+        is_inferred_default=True,
+        inferred_fields=["num_hidden_layers", "hidden_size", "attention_heads", "key_value_heads"],
       )
+
+  if arch.is_inferred_default:
+    st.warning(
+      f"⚠️ Architecture fields unavailable; using inferred defaults for: "
+      f"{', '.join(arch.inferred_fields)}. Sizing estimates may be inaccurate."
+    )
 
   # Sidebar Controls: Agentic Parameters
   with st.sidebar:
@@ -462,17 +471,50 @@ def main():
       "Context Window Depth (tokens):",
       options=[8192, 16384, 32768, 65536, 98304, 131072, 196608, 262144],
       value=default_context if default_context in [8192, 16384, 32768, 65536, 98304, 131072, 196608, 262144] else 65536,
-      help="Agentic coding typically operates at 32k to 64k+ tokens to retain tool calls, test runs, and repo context.",
+      help="Deep context (32k to 128k+ tokens) is required for multi-turn agent loops, test runs, and repo browsing.",
     )
 
-    # KV Cache Precision
-    kv_prec_choice = st.selectbox(
-      "KV Cache Quantization:",
-      options=list(KVCachePrecision),
-      format_func=lambda x: x.value,
-      index=1,  # Default to FP8 (Q8_0)
-      help="FP8 / Q8_0 is the recommended modern default for agentic coding: saves 50% KV cache memory with zero loss in code quality.",
+    # KV Cache Quantization
+    use_asym_kv = st.checkbox(
+      "Asymmetric K / V Quantization",
+      value=False,
+      help="In llama.cpp, --cache-type-k and --cache-type-v can be configured independently.",
     )
+    if not use_asym_kv:
+      kv_type_choice = st.selectbox(
+        "KV Cache Quantization:",
+        options=[
+          KVCacheType.Q8_0,
+          KVCacheType.FP8_E4M3,
+          KVCacheType.Q4_0,
+          KVCacheType.Q5_0,
+          KVCacheType.F16,
+          KVCacheType.BF16,
+        ],
+        format_func=lambda x: x.label,
+        index=0,  # Default to Q8_0
+        help="Recommended memory-efficient default; quality impact is generally small but model/backend dependent.",
+      )
+      cache_type_k = kv_type_choice
+      cache_type_v = kv_type_choice
+    else:
+      c_k, c_v = st.columns(2)
+      with c_k:
+        cache_type_k = st.selectbox(
+          "K Cache Format:",
+          options=list(KVCacheType),
+          format_func=lambda x: x.value,
+          index=list(KVCacheType).index(KVCacheType.Q8_0),
+          help="--cache-type-k format in llama.cpp",
+        )
+      with c_v:
+        cache_type_v = st.selectbox(
+          "V Cache Format:",
+          options=list(KVCacheType),
+          format_func=lambda x: x.value,
+          index=list(KVCacheType).index(KVCacheType.Q8_0),
+          help="--cache-type-v format in llama.cpp",
+        )
 
     # Headroom Slider
     headroom_val = st.slider(
@@ -498,7 +540,8 @@ def main():
     arch=arch,
     selected_quant=selected_quant,
     context_tokens=context_choice,
-    kv_precision=kv_prec_choice,
+    cache_type_k=cache_type_k,
+    cache_type_v=cache_type_v,
     headroom_gb=headroom_val,
     ubatch_chunk_size=ubatch_size,
   )
@@ -564,8 +607,8 @@ def main():
   st.write("")
 
   # Visual Breakdown Progress Bar
-  st.subheader("📊 Memory Allocation Breakdown")
-  col_bar, col_legend = st.columns([3, 1])
+  st.subheader("📊 Memory Allocation & Epistemic Confidence Breakdown")
+  col_bar, col_legend = st.columns([3, 2])
 
   with col_bar:
     # Prepare breakdown data
@@ -577,6 +620,12 @@ def main():
           calc.kv_cache_gb,
           calc.activation_scratch_gb,
           calc.headroom_gb,
+        ],
+        "Confidence / Source": [
+          calc.component_confidences.get("weights", "Exact repository bytes"),
+          calc.component_confidences.get("kv_cache", "Architecture-derived"),
+          calc.component_confidences.get("activation_scratch", "Backend heuristic"),
+          calc.component_confidences.get("headroom", "User policy"),
         ],
       }
     )
@@ -590,14 +639,18 @@ def main():
     )
 
   with col_legend:
-    st.markdown("##### Allocation Share:")
+    st.markdown("##### Allocation & Epistemic Source:")
     for _, row in df_breakdown.iterrows():
-      st.markdown(f"- **{row['Component']}**: `{row['Memory (GB)']} GB` ({row['Percentage']}%)")
+      st.markdown(
+        f"- **{row['Component']}**: `{row['Memory (GB)']} GB` ({row['Percentage']}%)  \n"
+        f"  <span style='font-size: 0.8rem; color: var(--text-sub);'>Basis: {row['Confidence / Source']}</span>",
+        unsafe_allow_html=True,
+      )
 
   # Model-Specific Considerations Alert Box
   st.write("")
   if arch.special_notes or calc.insights:
-    st.subheader("💡 Model-Specific Considerations & Agentic Insights")
+    st.subheader("💡 Model-Specific Considerations & Engineering Insights")
     for note in arch.special_notes:
       st.info(note)
     for insight in calc.insights:
@@ -606,9 +659,9 @@ def main():
   # Mac Hardware Sizing & Compatibility Matrix
   st.write("")
   st.subheader("💻 Apple Silicon Unified RAM Compatibility Matrix")
-  st.caption("How this model configuration fits across various Mac unified memory tiers:")
+  st.caption("Evaluates both physical OS RAM fit and macOS default ~75% Metal working-set limit:")
 
-  mac_evals = evaluate_all_mac_tiers(calc.total_ram_required_gb)
+  mac_evals = evaluate_all_mac_tiers(calc.total_ram_required_gb, calc.runtime_process_gb)
 
   # Display in 4-column responsive grid
   cols = st.columns(4)
@@ -620,10 +673,11 @@ def main():
         badge_html = f'<span class="badge-optimal">🟢 OPTIMAL ({ev.free_ram_gb:.1f} GB Free)</span>'
       elif ev.status == "TIGHT":
         card_class = "hw-card hw-card-tight"
-        badge_html = f'<span class="badge-tight">🟡 TIGHT ({ev.free_ram_gb:.1f} GB Free)</span>'
+        badge_label = "🟡 REQUIRES SYSCTL" if ev.metal_status == "EXCEEDS_DEFAULT_LIMIT" else "🟡 TIGHT"
+        badge_html = f'<span class="badge-tight">{badge_label} ({ev.free_ram_gb:.1f} GB Free)</span>'
       else:
         card_class = "hw-card hw-card-oom"
-        badge_html = f'<span class="badge-oom">🔴 WILL SWAP / OOM ({abs(ev.free_ram_gb):.1f} GB Short)</span>'
+        badge_html = f'<span class="badge-oom">🔴 LIKELY SWAP / OOM ({abs(ev.free_ram_gb):.1f} GB Short)</span>'
 
       st.markdown(
         f"""
@@ -640,27 +694,27 @@ def main():
   # Interactive Context Scaling Chart
   st.write("")
   st.subheader("📈 Context Scaling Curve: KV Cache RAM vs Context Depth")
-  st.caption("Demonstrating how KV Cache memory grows as agentic coding context expands from 8k to 131k tokens:")
+  st.caption("Comparing KV Cache memory growth across GGML cache quantizations as context expands from 8k to 131k tokens:")
 
   test_contexts = [8192, 16384, 32768, 49152, 65536, 98304, 131072]
-  fp16_kv_vals = []
-  fp8_kv_vals = []
+  f16_kv_vals = []
+  q8_kv_vals = []
   q4_kv_vals = []
 
   for ctx in test_contexts:
-    b_fp16, _ = calculate_kv_cache_bytes(arch, ctx, KVCachePrecision.FP16)
-    b_fp8, _ = calculate_kv_cache_bytes(arch, ctx, KVCachePrecision.FP8)
-    b_q4, _ = calculate_kv_cache_bytes(arch, ctx, KVCachePrecision.Q4_0)
-    fp16_kv_vals.append(round(b_fp16 / (1024**3), 2))
-    fp8_kv_vals.append(round(b_fp8 / (1024**3), 2))
+    b_f16, _ = calculate_kv_cache_bytes(arch, ctx, cache_type_k=KVCacheType.F16, cache_type_v=KVCacheType.F16)
+    b_q8, _ = calculate_kv_cache_bytes(arch, ctx, cache_type_k=KVCacheType.Q8_0, cache_type_v=KVCacheType.Q8_0)
+    b_q4, _ = calculate_kv_cache_bytes(arch, ctx, cache_type_k=KVCacheType.Q4_0, cache_type_v=KVCacheType.Q4_0)
+    f16_kv_vals.append(round(b_f16 / (1024**3), 2))
+    q8_kv_vals.append(round(b_q8 / (1024**3), 2))
     q4_kv_vals.append(round(b_q4 / (1024**3), 2))
 
   df_scaling = pd.DataFrame(
     {
       "Context (Tokens)": [f"{c // 1024}k" for c in test_contexts],
-      "FP16 KV Cache (GB)": fp16_kv_vals,
-      "FP8 / Q8_0 KV Cache (GB)": fp8_kv_vals,
-      "Q4_0 KV Cache (GB)": q4_kv_vals,
+      "f16 KV Cache (GB)": f16_kv_vals,
+      "q8_0 KV Cache (GB)": q8_kv_vals,
+      "q4_0 KV Cache (GB)": q4_kv_vals,
     }
   ).set_index("Context (Tokens)")
 
@@ -678,6 +732,7 @@ def main():
       st.markdown(f"- **KV Heads (GQA)**: `{arch.num_key_value_heads}`")
       st.markdown(f"- **Head Dimension**: `{arch.head_dim}`")
       st.markdown(f"- **Native Max Context**: `{arch.max_position_embeddings:,}` tokens")
+      st.markdown(f"- **Full Attention Scheme**: `{arch.full_attention_kv_scheme.upper()}`")
     with c2:
       st.markdown("##### Advanced Architectural Features")
       st.markdown(f"- **MLA (Multi-Head Latent Attention)**: `{'Yes' if arch.is_mla else 'No'}`")
@@ -686,8 +741,8 @@ def main():
         st.markdown(f"  - Decoupled RoPE Dim: `{arch.qk_rope_head_dim}`")
       st.markdown(f"- **Hybrid Linear Attention**: `{'Yes' if arch.is_hybrid_linear else 'No'}`")
       if arch.is_hybrid_linear:
-        st.markdown(f"  - Full MLA Layers: `{arch.num_full_attention_layers}`")
-        st.markdown(f"  - Linear Attention Layers: `{arch.num_linear_attention_layers}`")
+        st.markdown(f"  - Full Attention Layers: `{arch.num_full_attention_layers}` ({arch.full_attention_kv_scheme.upper()})")
+        st.markdown(f"  - Linear Attention Layers: `{arch.num_linear_attention_layers}` (Constant Recurrent State)")
       st.markdown(f"- **Mixture-of-Experts (MoE)**: `{'Yes' if arch.is_moe else 'No'}`")
       if arch.is_moe:
         st.markdown(f"  - Total Routed Experts: `{arch.num_routed_experts}`")

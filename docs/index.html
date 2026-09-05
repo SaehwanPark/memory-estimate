@@ -394,8 +394,8 @@
           </p>
           <ul>
             <li><strong>Standard FP16 KV Cache:</strong> ~17.2 GB</li>
-            <li><strong>FP8 (Q8_0) KV Cache:</strong> ~8.6 GB (50% reduction with negligible quality loss)</li>
-            <li><strong>Q4_0 KV Cache:</strong> ~4.3 GB (75% reduction)</li>
+            <li><strong>8-bit (q8_0 / FP8) KV Cache:</strong> ~8.6 - 9.1 GB (recommended memory-efficient default; quality impact is generally small but model/backend dependent)</li>
+            <li><strong>Q4_0 KV Cache:</strong> ~4.8 GB (block scale metadata included; 4.5 bpw)</li>
           </ul>
         </div>
 
@@ -560,8 +560,8 @@ uv run python main.py</code></pre>
           </p>
           <ul>
             <li><strong>표준 FP16 KV 캐시:</strong> 약 17.2 GB (가중치에 필적)</li>
-            <li><strong>FP8(Q8_0) KV 캐시:</strong> 약 8.6 GB (코딩 성능 저하 없이 메모리 50% 절감, 추천 설정)</li>
-            <li><strong>Q4_0 KV 캐시:</strong> 약 4.3 GB (메모리 75% 절감)</li>
+            <li><strong>8비트(q8_0 / FP8) KV 캐시:</strong> 약 8.6~9.1 GB (품질 영향이 대체로 미미한 권장 기본값, 모델/런타임별 상이)</li>
+            <li><strong>Q4_0 KV 캐시:</strong> 약 4.8 GB (블록 스케일 메타데이터 포함 시 4.5 bpw)</li>
           </ul>
         </div>
 

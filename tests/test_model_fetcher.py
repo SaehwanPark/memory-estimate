@@ -201,5 +201,60 @@ def test_qwen_moe_architecture_parsing():
   assert arch.is_hybrid_linear is True
   assert arch.num_full_attention_layers == 10
   assert arch.num_linear_attention_layers == 30
+  assert arch.full_attention_kv_scheme == "gqa"
+
+
+def test_gguf_precedence_over_config():
+  fetcher = ModelMetadataFetcher()
+  # Upstream config says 32 layers and 4096 hidden, but GGUF has 28 layers and 3584 hidden
+  config = {
+    "num_hidden_layers": 32,
+    "hidden_size": 4096,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "max_position_embeddings": 32768,
+  }
+  gguf_meta = {
+    "general.architecture": "qwen2",
+    "qwen2.block_count": 28,
+    "qwen2.embedding_length": 3584,
+    "qwen2.attention.head_count": 28,
+    "qwen2.attention.head_count_kv": 4,
+    "qwen2.context_length": 131072,
+  }
+
+  arch = fetcher._build_architecture_obj(
+    repo_id="test/qwen-gguf",
+    is_gguf=True,
+    base_model="test/upstream-base",
+    gguf_meta=gguf_meta,
+    config=config,
+  )
+
+  # Artifact metadata takes priority
+  assert arch.num_hidden_layers == 28
+  assert arch.hidden_size == 3584
+  assert arch.num_attention_heads == 28
+  assert arch.num_key_value_heads == 4
+  assert arch.max_position_embeddings == 131072
+  assert arch.full_attention_kv_scheme == "gqa"
+
+
+def test_inferred_defaults_warning():
+  fetcher = ModelMetadataFetcher()
+  # Empty config and empty GGUF metadata
+  arch = fetcher._build_architecture_obj(
+    repo_id="test/unknown-model",
+    is_gguf=False,
+    base_model=None,
+    gguf_meta={},
+    config={},
+  )
+
+  assert arch.is_inferred_default is True
+  assert len(arch.inferred_fields) > 0
+  assert any("num_hidden_layers" in f for f in arch.inferred_fields)
+  assert any("⚠️ Architecture fields unavailable" in note for note in arch.special_notes)
+
 
 
