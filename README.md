@@ -37,7 +37,8 @@ $$\text{Unified RAM Total} = M_{\text{weights}} + M_{\text{KV}} + M_{\text{scrat
 2. **KV Cache Memory ($M_{\text{KV}}$)**:
   - **Standard GQA / MHA**: $2 \times N_{\text{layers}} \times H_{\text{KV}} \times D_{\text{head}} \times C \times B_{\text{elem}}$
   - **MLA (Multi-Head Latent Attention)**: $N_{\text{layers}} \times (d_c + d_R) \times C \times B_{\text{elem}}$
-  - **Hybrid Linear Attention**: $N_{\text{full\_attn}} \times (d_c + d_R) \times C \times B_{\text{elem}} + N_{\text{linear\_attn}} \times S_{\text{recurrent\_state}}$
+  - **Hybrid Linear Attention**: $N_{\text{full}} \times (d_c + d_R) \times C \times B_{\text{elem}} + N_{\text{linear}} \times S_{\text{state}}$
+
 3. **Activation & Scratchpad ($M_{\text{scratch}}$)**:
   - Intermediate forward-pass tensor buffers and attention workspace during prompt prefill chunks (`ubatch`).
 4. **Required Headroom ($M_{\text{headroom}}$)**:
