@@ -743,6 +743,122 @@ class ModelMetadataFetcher:
         or gguf_meta.get(f"{arch_prefix}vocab_size")
       )
 
+    # Normalize list-typed metadata fields (e.g. per-layer KV head arrays in GGUF or configs)
+    is_hybrid_linear = False
+    num_full_attn: Optional[int] = None
+    num_linear_attn: Optional[int] = None
+
+    if isinstance(num_kv_heads, list):
+      non_zero_kv = [int(h) for h in num_kv_heads if int(h) > 0]
+      zero_kv_count = sum(1 for h in num_kv_heads if int(h) == 0)
+      if zero_kv_count > 0:
+        is_hybrid_linear = True
+        num_full_attn = len(non_zero_kv)
+        num_linear_attn = zero_kv_count
+      num_kv_heads = max(non_zero_kv) if non_zero_kv else 1
+    elif num_kv_heads is not None:
+      try:
+        num_kv_heads = int(num_kv_heads)
+      except (ValueError, TypeError):
+        num_kv_heads = None
+
+    if isinstance(num_heads, list):
+      num_heads = max(int(h) for h in num_heads) if num_heads else 32
+    elif num_heads is not None:
+      try:
+        num_heads = int(num_heads)
+      except (ValueError, TypeError):
+        num_heads = None
+
+    if isinstance(num_layers, list):
+      num_layers = len(num_layers)
+    elif num_layers is not None:
+      try:
+        num_layers = int(num_layers)
+      except (ValueError, TypeError):
+        num_layers = None
+
+    if isinstance(hidden_size, list):
+      hidden_size = int(hidden_size[0]) if hidden_size else 4096
+    elif hidden_size is not None:
+      try:
+        hidden_size = int(hidden_size)
+      except (ValueError, TypeError):
+        hidden_size = None
+
+    if isinstance(explicit_head_dim, list):
+      explicit_head_dim = max(int(d) for d in explicit_head_dim) if explicit_head_dim else None
+    elif explicit_head_dim is not None:
+      try:
+        explicit_head_dim = int(explicit_head_dim)
+      except (ValueError, TypeError):
+        explicit_head_dim = None
+
+    if isinstance(max_context, list):
+      max_context = max(int(c) for c in max_context) if max_context else 32768
+    elif max_context is not None:
+      try:
+        max_context = int(max_context)
+      except (ValueError, TypeError):
+        max_context = None
+
+    if isinstance(sliding_window, list):
+      valid_windows = [int(w) for w in sliding_window if w is not None and int(w) > 0]
+      sliding_window = min(valid_windows) if valid_windows else None
+    elif sliding_window is not None:
+      try:
+        sliding_window = int(sliding_window)
+      except (ValueError, TypeError):
+        sliding_window = None
+
+    if isinstance(kv_lora_rank, list):
+      kv_lora_rank = max(int(r) for r in kv_lora_rank) if kv_lora_rank else None
+    elif kv_lora_rank is not None:
+      try:
+        kv_lora_rank = int(kv_lora_rank)
+      except (ValueError, TypeError):
+        kv_lora_rank = None
+
+    if isinstance(qk_rope_head_dim, list):
+      qk_rope_head_dim = max(int(d) for d in qk_rope_head_dim) if qk_rope_head_dim else 0
+    elif qk_rope_head_dim is not None:
+      try:
+        qk_rope_head_dim = int(qk_rope_head_dim)
+      except (ValueError, TypeError):
+        qk_rope_head_dim = 0
+
+    if isinstance(num_routed_experts, list):
+      num_routed_experts = max(int(e) for e in num_routed_experts) if num_routed_experts else None
+    elif num_routed_experts is not None:
+      try:
+        num_routed_experts = int(num_routed_experts)
+      except (ValueError, TypeError):
+        num_routed_experts = None
+
+    if isinstance(num_experts_per_tok, list):
+      num_experts_per_tok = max(int(e) for e in num_experts_per_tok) if num_experts_per_tok else None
+    elif num_experts_per_tok is not None:
+      try:
+        num_experts_per_tok = int(num_experts_per_tok)
+      except (ValueError, TypeError):
+        num_experts_per_tok = None
+
+    if isinstance(num_shared_experts, list):
+      num_shared_experts = max(int(e) for e in num_shared_experts) if num_shared_experts else None
+    elif num_shared_experts is not None:
+      try:
+        num_shared_experts = int(num_shared_experts)
+      except (ValueError, TypeError):
+        num_shared_experts = None
+
+    if isinstance(vocab_size, list):
+      vocab_size = int(vocab_size[0]) if vocab_size else None
+    elif vocab_size is not None:
+      try:
+        vocab_size = int(vocab_size)
+      except (ValueError, TypeError):
+        vocab_size = None
+
     # Epistemic precision: track whether essential fields were missing and required fallback
     inferred_fields: List[str] = []
     if num_layers is None:
@@ -781,24 +897,30 @@ class ModelMetadataFetcher:
     # Hybrid Linear Attention analysis
     layer_types = cfg.get("layer_types", [])
     full_attn_interval = cfg.get("full_attention_interval")
-    is_hybrid_linear = False
-    num_full_attn = num_layers
-    num_linear_attn = 0
 
-    if layer_types:
-      num_linear_attn = sum(1 for lt in layer_types if "linear" in lt)
-      num_full_attn = sum(1 for lt in layer_types if "linear" not in lt and ("attention" in lt or "sparse" in lt))
-      if num_linear_attn > 0:
+    if not is_hybrid_linear:
+      num_full_attn = num_layers
+      num_linear_attn = 0
+
+      if layer_types:
+        num_linear_attn = sum(1 for lt in layer_types if "linear" in lt)
+        num_full_attn = sum(1 for lt in layer_types if "linear" not in lt and ("attention" in lt or "sparse" in lt))
+        if num_linear_attn > 0:
+          is_hybrid_linear = True
+      elif full_attn_interval and full_attn_interval > 1:
+        # e.g. Qwen3.5/3.6 MoE full_attention_interval = 4
         is_hybrid_linear = True
-    elif full_attn_interval and full_attn_interval > 1:
-      # e.g. Qwen3.5/3.6 MoE full_attention_interval = 4
-      is_hybrid_linear = True
-      num_full_attn = max(1, num_layers // full_attn_interval)
-      num_linear_attn = num_layers - num_full_attn
-    elif "glm5next" in arch_type.lower():
-      is_hybrid_linear = True
-      num_full_attn = 11
-      num_linear_attn = num_layers - num_full_attn
+        num_full_attn = max(1, num_layers // full_attn_interval)
+        num_linear_attn = num_layers - num_full_attn
+      elif "glm5next" in arch_type.lower():
+        is_hybrid_linear = True
+        num_full_attn = 11
+        num_linear_attn = num_layers - num_full_attn
+    else:
+      if num_full_attn is None:
+        num_full_attn = num_layers
+      if num_linear_attn is None:
+        num_linear_attn = max(0, num_layers - num_full_attn)
 
     notes = []
     if is_inferred_default:
