@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Unified RAM Estimator for Agentic Coding | Documentation</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg-card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --badge-green: #4ade80;
+      --badge-yellow: #facc15;
+      --badge-red: #f87171;
+      --code-bg: #090d16;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      padding: 0 20px 80px;
+    }
+
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 60px 0 40px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .header-content h1 {
+      font-size: 2.3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .header-content p {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 720px;
+    }
+
+    .lang-switch {
+      display: flex;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 4px;
+    }
+
+    .lang-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+
+    .lang-btn.active {
+      background: var(--accent);
+      color: #0f172a;
+    }
+
+    section {
+      margin-bottom: 50px;
+    }
+
+    h2 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #f1f5f9;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+      padding-bottom: 10px;
+    }
+
+    h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 24px 0 12px;
+      color: #e2e8f0;
+    }
+
+    p, ul, ol {
+      margin-bottom: 16px;
+      color: #cbd5e1;
+    }
+
+    ul, ol {
+      padding-left: 24px;
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    strong {
+      color: #f8fafc;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: var(--code-bg);
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+    }
+
+    pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      color: #e2e8f0;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 12px 16px;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(30, 41, 59, 0.9);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) {
+      background: rgba(15, 23, 42, 0.4);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .badge-optimal {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--badge-green);
+      border: 1px solid rgba(74, 222, 128, 0.35);
+    }
+
+    .badge-tight {
+      background: rgba(234, 179, 8, 0.2);
+      color: var(--badge-yellow);
+      border: 1px solid rgba(250, 204, 21, 0.35);
+    }
+
+    .badge-oom {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--badge-red);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+    }
+
+    .cta-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent);
+      color: #0f172a;
+      text-decoration: none;
+      font-weight: 700;
+      padding: 12px 24px;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+
+    .cta-button:hover {
+      background: var(--accent-hover);
+    }
+
+    .lang-section {
+      display: none;
+    }
+
+    .lang-section.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-content">
+        <h1>LLM Unified RAM Estimator</h1>
+        <p>Architectural memory modeling for deep-context agentic coding on Apple Silicon & Unified Memory architectures.</p>
+      </div>
+      <div class="lang-switch">
+        <button class="lang-btn active" onclick="switchLang('en')">English</button>
+        <button class="lang-btn" onclick="switchLang('ko')">한국어</button>
+      </div>
+    </header>
+
+    <!-- ENGLISH SECTION -->
+    <div id="section-en" class="lang-section active">
+      <section>
+        <h2>🎯 Purpose & Core Overview</h2>
+        <p>
+          Running local LLMs for <strong>agentic coding</strong> (e.g. Cursor, Claude Code, Aider, Roo Code) is fundamentally different from running simple one-shot conversational chatbots. Coding agents maintain extensive context windows (<strong>32k to 128k+ tokens</strong>) loaded with repository file trees, AST outlines, compiler diagnostics, and iterative tool outputs.
+        </p>
+        <p>
+          At 64k or 128k context depth, <strong>KV Cache memory frequently exceeds the size of the model weights themselves</strong>. This tool fetches real Hugging Face metadata, inspects remote GGUF binary headers via range requests, groups sharded files, and computes realistic Unified RAM requirements.
+        </p>
+        <div style="margin-top: 20px;">
+          <a class="cta-button" href="https://github.com/SaehwanPark/memory-estimate" target="_blank">
+            View on GitHub →
+          </a>
+        </div>
+      </section>
+
+      <section>
+        <h2>🔍 How This App Differentiates From Other Calculators</h2>
+        <p>
+          Most existing memory estimators rely on simplistic, outdated rules of thumb. Here is how this application compares with existing tools in the ecosystem:
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Feature / Capability</th>
+              <th>This Application</th>
+              <th>Can-It-Run / Generic Web Tools</th>
+              <th>Hugging Face Model Memory Calculator</th>
+              <th>llama.cpp / llama-bench</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Direct HF URL & GGUF Shard Ingestion</strong></td>
+              <td><span class="badge badge-optimal">Real-Time Ingestion</span><br>Fetches exact shard byte sums without downloading files</td>
+              <td><span class="badge badge-oom">Manual</span><br>Requires manual parameter entry</td>
+              <td><span class="badge badge-tight">Base Only</span><br>Only works on standard HF transformers repos</td>
+              <td><span class="badge badge-oom">Local Only</span><br>Requires downloading multi-GB model first</td>
+            </tr>
+            <tr>
+              <td><strong>Multi-Head Latent Attention (MLA)</strong></td>
+              <td><span class="badge badge-optimal">Fully Supported</span><br>DeepSeek V2/V3 & GLM-5 (~5x cache compression)</td>
+              <td><span class="badge badge-oom">Unsupported</span><br>Assumes standard MHA/GQA (5x-10x error)</td>
+              <td><span class="badge badge-oom">Unsupported</span><br>Calculates training/1-pass only</td>
+              <td><span class="badge badge-tight">Runtime Only</span><br>Calculates after full file load</td>
+            </tr>
+            <tr>
+              <td><strong>Hybrid Linear Attention (GLM-5.3, Qwen3.6 MoE)</strong></td>
+              <td><span class="badge badge-optimal">Fully Supported</span><br>Models constant linear state + sparse attention</td>
+              <td><span class="badge badge-oom">Unsupported</span><br>Overestimates KV cache by up to 10x</td>
+              <td><span class="badge badge-oom">Unsupported</span></td>
+              <td><span class="badge badge-tight">Runtime Only</span></td>
+            </tr>
+            <tr>
+              <td><strong>Pre-Quantized MLX / Safetensors Support</strong></td>
+              <td><span class="badge badge-optimal">Exact Detection</span><br>Detects 3-bit/4-bit MLX configs & true weights</td>
+              <td><span class="badge badge-oom">Unsupported</span></td>
+              <td><span class="badge badge-oom">Unsupported</span></td>
+              <td><span class="badge badge-oom">GGUF Only</span></td>
+            </tr>
+            <tr>
+              <td><strong>Agentic Coding Deep Context Focus</strong></td>
+              <td><span class="badge badge-optimal">Dedicated Focus</span><br>32k-128k context, FP8 cache, prefill chunks</td>
+              <td><span class="badge badge-tight">Partial</span><br>Generic 2k-8k token slider</td>
+              <td><span class="badge badge-oom">None</span><br>Single-forward-pass only</td>
+              <td><span class="badge badge-tight">Manual Flags</span></td>
+            </tr>
+            <tr>
+              <td><strong>Apple Silicon Unified RAM Sizing</strong></td>
+              <td><span class="badge badge-optimal">Hardware Matrix</span><br>16GB - 512GB tiers with macOS headroom & sysctl limits</td>
+              <td><span class="badge badge-tight">VRAM only</span><br>Assumes discrete NVIDIA GPU VRAM</td>
+              <td><span class="badge badge-tight">VRAM only</span></td>
+              <td><span class="badge badge-tight">Terminal logs</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>📚 Background & Technical Concepts</h2>
+        
+        <div class="card">
+          <h3>1. Unified Memory vs. Discrete GPU VRAM</h3>
+          <p>
+            On Apple Silicon (M1/M2/M3/M4), CPU and GPU share a single physical memory pool called <strong>Unified Memory</strong>.
+            Unlike discrete NVIDIA graphics cards that have dedicated VRAM, macOS must share memory between the LLM weights, the KV cache, the macOS kernel, the WindowServer, multi-monitor display framebuffers, and developer tools (VSCode/Cursor, browser, Docker).
+          </p>
+          <p>
+            <strong>The Swapping Penalty:</strong> If LLM allocation exceeds physical memory, macOS immediately begins compressed memory swapping to NVMe SSD. In LLM inference, this destroys generation speed from <strong>25-40 tokens/sec down to 0.5 tokens/sec</strong>.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>2. What is the KV Cache in Agentic Coding?</h3>
+          <p>
+            During transformer inference, previously evaluated Key and Value vector representations of tokens are retained in memory so they do not need to be recomputed for each generated token.
+          </p>
+          <p>
+            In agentic coding, each turn can add thousands of tokens. At 64,000 tokens on a 32B model:
+          </p>
+          <ul>
+            <li><strong>Standard FP16 KV Cache:</strong> ~17.2 GB</li>
+            <li><strong>FP8 (Q8_0) KV Cache:</strong> ~8.6 GB (50% reduction with negligible quality loss)</li>
+            <li><strong>Q4_0 KV Cache:</strong> ~4.3 GB (75% reduction)</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>3. Attention Architectures Compared</h3>
+          <ul>
+            <li><strong>MHA (Multi-Head Attention):</strong> Equal number of query, key, and value heads. Massive KV cache footprint.</li>
+            <li><strong>GQA (Grouped-Query Attention):</strong> Multiple query heads share a single key/value head (e.g. 8:1 ratio in Llama 3.1 70B or Qwen 2.5 32B), reducing KV cache size by 4x to 8x.</li>
+            <li><strong>MLA (Multi-Head Latent Attention):</strong> Used in DeepSeek V2/V3 and GLM-5. Key and Value projections are compressed into a low-rank latent vector (<code>kv_lora_rank = 512</code>). Achieves ~5x KV cache compression over standard GQA!</li>
+            <li><strong>Hybrid Linear Attention:</strong> Used in models like <code>GLM-5.3-Flash</code> and <code>Qwen3.6 MoE</code>. Only a fraction of layers use full/sparse attention, while the majority use linear recurrent attention with fixed state memory.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section>
+        <h2>🚀 How to Use the Application</h2>
+        <ol>
+          <li>
+            <strong>Select or Paste Model URL:</strong>
+            Enter any Hugging Face URL (e.g., <code>https://huggingface.co/unsloth/GLM-5.3-Flash-GGUF</code> or <code>https://huggingface.co/unsloth/Qwen3.6-35B-A3B-UD-MLX-3bit</code>), or select a preset.
+          </li>
+          <li>
+            <strong>Select Quantization Variant:</strong>
+            The app automatically lists all detected quantizations with their exact shard counts and byte sizes (e.g. <code>UD-Q3_K_XL</code>, <code>UD-QD3_XXS</code>, <code>UD-MLX-3bit [Repo Exact]</code>).
+          </li>
+          <li>
+            <strong>Configure Agentic Parameters:</strong>
+            Adjust the context window depth slider (default: 64k tokens), KV Cache quantization (FP16, FP8, Q4_0), and system headroom (default: 6.0 GB).
+          </li>
+          <li>
+            <strong>Review Memory Allocation & Hardware Sizing:</strong>
+            Inspect the live stacked breakdown and the Apple Silicon Hardware Compatibility Matrix with status badges.
+          </li>
+        </ol>
+
+        <pre><code># Quick CLI Launch
+uv run streamlit run app.py
+
+# Or via main entrypoint
+uv run python main.py</code></pre>
+      </section>
+    </div>
+
+    <!-- KOREAN SECTION -->
+    <div id="section-ko" class="lang-section">
+      <section>
+        <h2>🎯 목적 및 핵심 개요</h2>
+        <p>
+          로컬 LLM을 <strong>에이전틱 코딩(Agentic Coding)</strong>(예: Cursor, Claude Code, Aider, Roo Code) 환경에서 실행하는 것은 단순한 단답형 챗봇 실행과 본질적으로 다릅니다. 코딩 에이전트는 프로젝트 전체의 디렉터리 트리, 수천 줄의 소스 코드, 컴파일러 오류 메시지, Git 변경 사항(Diff), 연속적인 툴 호출 히스토리를 보존하기 위해 <strong>32,768(32k) ~ 131,072(128k) 토큰 이상의 깊은 컨텍스트</strong>를 지속적으로 유지합니다.
+        </p>
+        <p>
+          이러한 깊은 컨텍스트에서는 <strong>KV 캐시(Key-Value Cache) 메모리가 모델 자체의 가중치 메모리보다 커지는 현상</strong>이 빈번히 발생합니다. 본 애플리케이션은 단순한 총 파라미터 수 기반의 어림짐작이 아닌, Hugging Face API와 GGUF 바이너리 헤더 범위 요청(Range Request)을 통해 실제 모델 구조와 샤딩된 파일 크기를 정밀 분석하여 통합 메모리(Unified RAM) 요구량을 실시간 계산합니다.
+        </p>
+        <div style="margin-top: 20px;">
+          <a class="cta-button" href="https://github.com/SaehwanPark/memory-estimate" target="_blank">
+            GitHub 리포지토리 바로가기 →
+          </a>
+        </div>
+      </section>
+
+      <section>
+        <h2>🔍 기존 LLM 메모리 계산기와의 차별점</h2>
+        <p>
+          현재 웹상에 존재하는 대다수 메모리 계산기는 고정된 파라미터 수식에 의존하거나 최신 어텐션 아키텍처를 지원하지 못합니다. 본 애플리케이션의 핵심 차별화 요소는 다음과 같습니다:
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>기능 및 지원 항목</th>
+              <th>본 애플리케이션</th>
+              <th>Can-It-Run 등 일반 계산기</th>
+              <th>Hugging Face 공식 메모리 계산기</th>
+              <th>llama.cpp (llama-bench)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Hugging Face URL & 샤드 직접 분석</strong></td>
+              <td><span class="badge badge-optimal">실시간 자동 분석</span><br>파일 다운로드 없이 분할 샤드 크기 자동 합산</td>
+              <td><span class="badge badge-oom">수동 입력</span><br>파라미터 수 직접 입력 필요</td>
+              <td><span class="badge badge-tight">기본 모델 한정</span><br>GGUF 및 MLX 양자화 미지원</td>
+              <td><span class="badge badge-oom">로컬 다운로드 필수</span><br>수십 GB 모델 다운로드 후 측정 가능</td>
+            </tr>
+            <tr>
+              <td><strong>MLA(Multi-Head Latent Attention)</strong></td>
+              <td><span class="badge badge-optimal">완벽 지원</span><br>DeepSeek V2/V3, GLM-5 (~5배 캐시 압축)</td>
+              <td><span class="badge badge-oom">미지원</span><br>일반 MHA로 계산하여 5~10배 오차 발생</td>
+              <td><span class="badge badge-oom">미지원</span><br>학습/1회 추론에 국한</td>
+              <td><span class="badge badge-tight">실행 시에만 확인</span><br>사전 예측 불가</td>
+            </tr>
+            <tr>
+              <td><strong>하이브리드 선형 어텐션 (GLM-5.3, Qwen3.6)</strong></td>
+              <td><span class="badge badge-optimal">완벽 지원</span><br>선형 상태(O(1))와 풀 어텐션 레이어 분리 계산</td>
+              <td><span class="badge badge-oom">미지원</span><br>메모리 과대 예측</td>
+              <td><span class="badge badge-oom">미지원</span></td>
+              <td><span class="badge badge-tight">실행 시에만 확인</span></td>
+            </tr>
+            <tr>
+              <td><strong>사전 양자화 MLX / Safetensors 지원</strong></td>
+              <td><span class="badge badge-optimal">정밀 인식</span><br>MLX 3-bit, 4-bit config 및 샤드 정밀 인식</td>
+              <td><span class="badge badge-oom">미지원</span></td>
+              <td><span class="badge badge-oom">미지원</span></td>
+              <td><span class="badge badge-oom">GGUF에 한정</span></td>
+            </tr>
+            <tr>
+              <td><strong>에이전틱 코딩 특화 컨텍스트 분석</strong></td>
+              <td><span class="badge badge-optimal">집중 설계</span><br>32k~128k 깊은 컨텍스트, FP8 캐시, 프리필 버퍼</td>
+              <td><span class="badge badge-tight">단순 슬라이더</span><br>2k~8k 일반 대화 중심</td>
+              <td><span class="badge badge-oom">미지원</span><br>단일 포워드 패스만 계산</td>
+              <td><span class="badge badge-tight">CLI 플래그 수동 조합</span></td>
+            </tr>
+            <tr>
+              <td><strong>Apple Silicon 통합 메모리 매트릭스</strong></td>
+              <td><span class="badge badge-optimal">하드웨어 매트릭스</span><br>16GB~512GB 티어, macOS 헤드룸 및 sysctl 한계</td>
+              <td><span class="badge badge-tight">VRAM 중심</span><br>외장 NVIDIA GPU 중심 설계</td>
+              <td><span class="badge badge-tight">VRAM 중심</span></td>
+              <td><span class="badge badge-tight">터미널 로그에 한정</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>📚 배경 지식 및 핵심 용어 설명</h2>
+        
+        <div class="card">
+          <h3>1. 통합 메모리(Unified Memory)와 외장 VRAM의 차이점</h3>
+          <p>
+            Apple Silicon(M1/M2/M3/M4)은 CPU와 GPU가 <strong>통합 메모리</strong>라는 단일 물리 풀을 공유합니다.
+            독립된 VRAM을 가진 NVIDIA 외장 그래픽 카드와 달리, Mac에서는 LLM 가중치와 KV 캐시뿐만 아니라 macOS 커널, WindowServer(디스플레이 합성기), 4K/5K 외장 모니터 프레임버퍼, 그리고 개발자가 실행 중인 IDE(Cursor, VSCode), 브라우저 등이 메모리를 함께 사용합니다.
+          </p>
+          <p>
+            <strong>스와핑(Swapping) 병목 현상:</strong> 실행 중인 LLM 메모리가 물리 통합 메모리를 초과하면, macOS는 NVMe SSD로 메모리 스와핑을 시작합니다. 이때 LLM의 토큰 생성 속도는 <strong>초당 25~40토큰에서 초당 0.5토큰 수준으로 급격히 추락(10~50배 감속)</strong>하여 에이전트 코딩이 사실상 불가능해집니다.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>2. 에이전틱 코딩에서의 KV 캐시(Key-Value Cache) 중요성</h3>
+          <p>
+            트랜스포머 디코더 모델은 이전 토큰들의 Key 및 Value 벡터 표현을 메모리에 보관하여 매 토큰 생성 시 재계산하지 않도록 합니다.
+          </p>
+          <p>
+            코딩 에이전트는 파일 수정, 빌드, 테스트, 로그 분석 루프를 반복하면서 컨텍스트를 급격히 누적합니다. 32B 모델의 64k(65,536) 토큰 기준:
+          </p>
+          <ul>
+            <li><strong>표준 FP16 KV 캐시:</strong> 약 17.2 GB (가중치에 필적)</li>
+            <li><strong>FP8(Q8_0) KV 캐시:</strong> 약 8.6 GB (코딩 성능 저하 없이 메모리 50% 절감, 추천 설정)</li>
+            <li><strong>Q4_0 KV 캐시:</strong> 약 4.3 GB (메모리 75% 절감)</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>3. 어텐션 구조별 메모리 영향 (MHA vs GQA vs MLA vs Hybrid)</h3>
+          <ul>
+            <li><strong>MHA (다중 헤드 주의집중):</strong> Query, Key, Value 헤드 수가 동일하여 컨텍스트가 길어질 때 캐시 메모리가 가장 빠르게 폭증합니다.</li>
+            <li><strong>GQA (그룹 쿼리 주의집중):</strong> 여러 쿼리 헤드가 하나의 Key/Value 헤드를 공유(예: 8:1)하여 캐시 메모리를 4~8배 절감합니다 (Llama 3.1, Qwen 2.5 등).</li>
+            <li><strong>MLA (다중 헤드 잠재 주의집중):</strong> DeepSeek V2/V3 및 GLM-5에서 채택한 구조입니다. Key/Value 프로젝션을 512차원의 저차원 잠재 벡터(<code>kv_lora_rank</code>)로 압축하여 저장하므로, 표준 GQA 대비 약 <strong>5배 추가 캐시 압축</strong>을 달성합니다.</li>
+            <li><strong>하이브리드 선형 어텐션:</strong> <code>GLM-5.3-Flash</code> 및 <code>Qwen3.6 MoE</code> 등에서 사용하는 차세대 구조로, 전체 레이어 중 일부만 어텐션을 수행하고 대다수 레이어는 고정 크기 상태(State)를 유지하는 선형 어텐션을 결합하여 긴 컨텍스트에서도 캐시 증가를 극적으로 억제합니다.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section>
+        <h2>🚀 애플리케이션 사용 방법</h2>
+        <ol>
+          <li>
+            <strong>Hugging Face 모델 URL 입력:</strong>
+            Hugging Face 주소(예: <code>https://huggingface.co/unsloth/GLM-5.3-Flash-GGUF</code> 또는 <code>https://huggingface.co/unsloth/Qwen3.6-35B-A3B-UD-MLX-3bit</code>)를 붙여넣거나 사이드바의 프리셋을 선택합니다.
+          </li>
+          <li>
+            <strong>양자화 버전 선택:</strong>
+            리포지토리 내의 모든 양자화 버전(예: <code>UD-Q3_K_XL</code>, <code>UD-QD3_XXS</code>, <code>UD-MLX-3bit [Repo Exact]</code>)과 샤드 파일 수, 정확한 용량이 자동으로 나열됩니다.
+          </li>
+          <li>
+            <strong>에이전틱 파라미터 조정:</strong>
+            컨텍스트 윈도우 깊이(기본 64k 권장), KV 캐시 정밀도(FP8 권장), 시스템 여유 공간(기본 6.0GB)을 설정합니다.
+          </li>
+          <li>
+            <strong>호환성 매트릭스 확인:</strong>
+            계산된 총 메모리와 16GB ~ 512GB Mac 티어별 호환성 뱃지(🟢 최적, 🟡 타이트, 🔴 스와핑 발생/메모리 부족)를 실시간으로 확인합니다.
+          </li>
+        </ol>
+
+        <pre><code># 터미널 실행 명령어
+uv run streamlit run app.py
+
+# 또는 메인 진입점 실행
+uv run python main.py</code></pre>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    function switchLang(lang) {
+      document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.lang-section').forEach(s => s.classList.remove('active'));
+
+      if (lang === 'ko') {
+        document.querySelector('.lang-btn:nth-child(2)').classList.add('active');
+        document.getElementById('section-ko').classList.add('active');
+      } else {
+        document.querySelector('.lang-btn:nth-child(1)').classList.add('active');
+        document.getElementById('section-en').classList.add('active');
+      }
+    }
+  </script>
+</body>
+</html>

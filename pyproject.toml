@@ -1,0 +1,28 @@
+[project]
+  name = "memory-estimate"
+  version = "0.1.0"
+  description = "Unified RAM estimation for LLMs in agentic coding"
+  readme = "README.md"
+  requires-python = ">=3.13"
+  dependencies = [
+    "gguf>=0.19.0",
+    "huggingface-hub>=1.30.0",
+    "pytest>=9.1.1",
+    "requests>=2.34.2",
+    "streamlit>=1.63.0",
+  ]
+
+[tool.pytest.ini_options]
+  pythonpath = ["."]
+  testpaths = ["tests"]
+
+[tool.basedpyright]
+  typeCheckingMode = "standard"
+  include = ["model_fetcher.py", "calculator.py", "app.py", "main.py", "tests"]
+
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39.10",
+]
+
